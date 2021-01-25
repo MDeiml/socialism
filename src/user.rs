@@ -65,7 +65,7 @@ pub async fn register(
     let login = login.into_inner();
     let serialized = bincode::serialize(&User {
         username: login.username.clone(),
-        password_hash: bcrypt::hash(&login.password, bcrypt::DEFAULT_COST)?,
+        password_hash: bcrypt::hash(&login.password, 4)?,
     })?;
     let result =
         (&users_tree, &users_username_tree).transaction(|(users_tree, users_username_tree)| {
