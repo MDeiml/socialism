@@ -1,3 +1,7 @@
+# Socialism
+
+Free time is common property.
+
 ## API
 
 All API calls except `register` and `login` have an additional session parameter.
