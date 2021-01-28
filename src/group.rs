@@ -4,6 +4,7 @@ use crate::{
 };
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use sled::Transactional;
 use std::{collections::HashMap, convert::TryInto};
 
@@ -29,7 +30,7 @@ pub async fn create(
         name: name.into_inner(),
         users: std::iter::once((user_id, true)).collect(),
     };
-    let group = bincode::serialize(&group)?;
+    let group = serde_json::to_vec(&group)?;
     (&groups_tree, &groups_user_tree)
         .transaction(|(groups_tree, groups_user_tree)| {
             groups_tree.insert(&group_id.to_be_bytes(), group.as_slice())?;
@@ -55,11 +56,11 @@ pub async fn list(
     let groups_user_tree = db.open_tree(GROUPS_USER_TREE)?;
     let groups = groups_user_tree
         .scan_prefix(user_id.to_be_bytes())
-        .map(|res| -> Result<(u64, Group), Error> {
+        .map(|res| -> Result<(u64, Box<RawValue>), Error> {
             let (k, _) = res?;
             let group = groups_tree.get(&k[8..16])?.expect("Missing group_id");
             let group_id = u64::from_be_bytes(k[8..16].try_into().unwrap());
-            Ok((group_id, bincode::deserialize(&group)?))
+            Ok((group_id, serde_json::from_slice(&group)?))
         })
         .collect::<Result<HashMap<_, _>, _>>()?;
     Ok(HttpResponse::Ok().json(groups))
@@ -84,17 +85,17 @@ pub async fn add_user(
         (&groups_tree, &groups_user_tree).transaction(|(groups_tree, groups_user_tree)| {
             match groups_tree.get(&params.group_id.to_be_bytes())? {
                 Some(group) => {
-                    let mut group: Group = bincode::deserialize(&group).map_err(|err| {
-                        sled::transaction::ConflictableTransactionError::Abort(Abort::BincodeError(
+                    let mut group: Group = serde_json::from_slice(&group).map_err(|err| {
+                        sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(
                             err,
                         ))
                     })?;
                     match group.users.get(&user_id) {
                         Some(true) => {
                             group.users.insert(params.user_id, false);
-                            let group = bincode::serialize(&group).map_err(|err| {
+                            let group = serde_json::to_vec(&group).map_err(|err| {
                                 sled::transaction::ConflictableTransactionError::Abort(
-                                    Abort::BincodeError(err),
+                                    Abort::SerdeError(err),
                                 )
                             })?;
                             groups_tree.insert(&params.group_id.to_be_bytes(), group)?;
@@ -117,7 +118,7 @@ pub async fn add_user(
         Err(sled::transaction::TransactionError::Abort(abort)) => match abort {
             Abort::NotFound => Ok(HttpResponse::NotFound().finish()),
             Abort::NotAllowed => Ok(HttpResponse::Forbidden().finish()),
-            Abort::BincodeError(err) => Err(Error::BincodeError(err)),
+            Abort::SerdeError(err) => Err(Error::SerdeError(err)),
         },
     }
 }
@@ -135,8 +136,8 @@ pub async fn remove_user(
         (&groups_tree, &groups_user_tree).transaction(|(groups_tree, groups_user_tree)| {
             match groups_tree.get(&params.group_id.to_be_bytes())? {
                 Some(group) => {
-                    let mut group: Group = bincode::deserialize(&group).map_err(|err| {
-                        sled::transaction::ConflictableTransactionError::Abort(Abort::BincodeError(
+                    let mut group: Group = serde_json::from_slice(&group).map_err(|err| {
+                        sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(
                             err,
                         ))
                     })?;
@@ -148,9 +149,9 @@ pub async fn remove_user(
                                     sled::transaction::abort(Abort::NotAllowed)
                                 }
                                 Some(_) => {
-                                    let group = bincode::serialize(&group).map_err(|err| {
+                                    let group = serde_json::to_vec(&group).map_err(|err| {
                                         sled::transaction::ConflictableTransactionError::Abort(
-                                            Abort::BincodeError(err),
+                                            Abort::SerdeError(err),
                                         )
                                     })?;
                                     groups_tree.insert(&params.group_id.to_be_bytes(), group)?;
@@ -175,7 +176,7 @@ pub async fn remove_user(
         Err(sled::transaction::TransactionError::Abort(abort)) => match abort {
             Abort::NotFound => Ok(HttpResponse::NotFound().finish()),
             Abort::NotAllowed => Ok(HttpResponse::Forbidden().finish()),
-            Abort::BincodeError(err) => Err(Error::BincodeError(err)),
+            Abort::SerdeError(err) => Err(Error::SerdeError(err)),
         },
     }
 }
@@ -191,16 +192,16 @@ pub async fn make_admin(
     let result = groups_tree.transaction(|groups_tree| {
         match groups_tree.get(&params.group_id.to_be_bytes())? {
             Some(group) => {
-                let mut group: Group = bincode::deserialize(&group).map_err(|err| {
-                    sled::transaction::ConflictableTransactionError::Abort(Abort::BincodeError(err))
+                let mut group: Group = serde_json::from_slice(&group).map_err(|err| {
+                    sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(err))
                 })?;
                 match group.users.get(&user_id) {
                     Some(true) => match group.users.insert(params.user_id, true) {
                         None => sled::transaction::abort(Abort::NotFound),
                         Some(_) => {
-                            let group = bincode::serialize(&group).map_err(|err| {
+                            let group = serde_json::to_vec(&group).map_err(|err| {
                                 sled::transaction::ConflictableTransactionError::Abort(
-                                    Abort::BincodeError(err),
+                                    Abort::SerdeError(err),
                                 )
                             })?;
                             groups_tree.insert(&params.group_id.to_be_bytes(), group)?;
@@ -220,7 +221,7 @@ pub async fn make_admin(
         Err(sled::transaction::TransactionError::Abort(abort)) => match abort {
             Abort::NotFound => Ok(HttpResponse::NotFound().finish()),
             Abort::NotAllowed => Ok(HttpResponse::Forbidden().finish()),
-            Abort::BincodeError(err) => Err(Error::BincodeError(err)),
+            Abort::SerdeError(err) => Err(Error::SerdeError(err)),
         },
     }
 }

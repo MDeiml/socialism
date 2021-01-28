@@ -3,7 +3,7 @@ use actix_web::HttpResponse;
 pub enum Abort {
     NotFound,
     NotAllowed,
-    BincodeError(bincode::Error),
+    SerdeError(serde_json::Error),
 }
 
 #[derive(Debug)]
@@ -11,7 +11,7 @@ pub enum Error {
     SledError(sled::Error),
     BcryptError(bcrypt::BcryptError),
     ActixError(actix_web::Error),
-    BincodeError(bincode::Error),
+    SerdeError(serde_json::Error),
     AuthenticationError,
 }
 
@@ -21,7 +21,7 @@ impl std::fmt::Display for Error {
             Self::SledError(e) => e.fmt(f),
             Self::BcryptError(e) => e.fmt(f),
             Self::ActixError(e) => e.fmt(f),
-            Self::BincodeError(e) => e.fmt(f),
+            Self::SerdeError(e) => e.fmt(f),
             Self::AuthenticationError => f.write_str("AuthenticationError"),
         }
     }
@@ -45,9 +45,9 @@ impl From<actix_web::Error> for Error {
     }
 }
 
-impl From<bincode::Error> for Error {
-    fn from(error: bincode::Error) -> Self {
-        Self::BincodeError(error)
+impl From<serde_json::Error> for Error {
+    fn from(error: serde_json::Error) -> Self {
+        Self::SerdeError(error)
     }
 }
 

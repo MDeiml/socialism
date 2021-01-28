@@ -63,7 +63,7 @@ pub async fn register(
     let users_tree = db.open_tree(USERS_TREE)?;
     let users_username_tree = db.open_tree(USERS_USERNAME_TREE)?;
     let login = login.into_inner();
-    let serialized = bincode::serialize(&User {
+    let serialized = serde_json::to_vec(&User {
         username: login.username.clone(),
         password_hash: bcrypt::hash(&login.password, 4)?,
     })?;
@@ -96,7 +96,8 @@ pub async fn login(
     match users_username_tree.get(username.as_bytes())? {
         None => Ok(HttpResponse::Unauthorized().finish()),
         Some(id) => {
-            let user: User = bincode::deserialize(&users_tree.get(&id)?.expect("Missing user_id"))?;
+            let user: User =
+                serde_json::from_slice(&users_tree.get(&id)?.expect("Missing user_id"))?;
             let id = u64::from_be_bytes(id.as_ref().try_into().unwrap());
             if bcrypt::verify(&password, &user.password_hash)? {
                 let token = new_session(&db, id)?;
