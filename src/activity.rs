@@ -206,7 +206,7 @@ pub async fn change_status(
                 }
                 Ok(())
             } else {
-                sled::transaction::abort(Abort::NotAllowed)
+                sled::transaction::abort(Abort::NotFound)
             }
         },
     );
