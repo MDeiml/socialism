@@ -1,5 +1,4 @@
 mod activity;
-mod block;
 mod group;
 mod user;
 mod util;
@@ -18,11 +17,11 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/")
                     .route("/user", web::post().to(user::register))
+                    .route("/user", web::get().to(user::get))
                     .route("/session", web::post().to(user::login))
                     .route("/session", web::delete().to(user::logout))
-                    .route("/block", web::post().to(block::add))
-                    .route("/block", web::delete().to(block::remove))
-                    .route("/block", web::get().to(block::list))
+                    .route("/block", web::post().to(user::add_block))
+                    .route("/block", web::delete().to(user::remove_block))
                     .route("/group", web::post().to(group::create))
                     .route("/group", web::get().to(group::list))
                     .route("/group/user", web::post().to(group::add_user))
