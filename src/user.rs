@@ -1,4 +1,4 @@
-use crate::util::Error;
+use crate::{block::Block, util::Error};
 use actix_web::{web, HttpResponse};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -7,15 +7,9 @@ use sled::Transactional;
 use std::{convert::TryInto, fmt::Write};
 
 const USERS_PASSWORD_TREE: &[u8] = b"users_password";
-const USERS_TREE: &[u8] = b"users";
+pub const USERS_TREE: &[u8] = b"users";
 const USERS_USERNAME_TREE: &[u8] = b"users_username";
 const SESSIONS_TREE: &[u8] = b"sessions";
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct Block {
-    start: u64,
-    end: u64,
-}
 
 #[derive(Deserialize)]
 pub struct Login {
@@ -25,19 +19,13 @@ pub struct Login {
 
 #[derive(Serialize, Deserialize)]
 pub struct User {
-    username: String,
-    blocks: Vec<Block>,
+    pub username: String,
+    pub blocks: Vec<Block>,
 }
 
 #[derive(Deserialize)]
 pub struct Session {
     token: String,
-}
-
-impl Block {
-    fn intersects(&self, other: &Block) -> bool {
-        self.start < other.end && self.end > other.start
-    }
 }
 
 fn new_session(db: &sled::Db, user_id: u64) -> Result<String, Error> {

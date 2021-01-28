@@ -1,8 +1,9 @@
 use std::{collections::HashMap, convert::TryInto};
 
 use crate::{
+    block::Block,
     group::Group,
-    user::Session,
+    user::{Session, User},
     util::{Abort, Error},
 };
 use actix_web::{web, HttpResponse};
@@ -16,8 +17,7 @@ const ACTIVITIES_USER_TREE: &[u8] = b"activities_user";
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Activity {
     group_id: u64,
-    start: u64,
-    end: u64,
+    block: Block,
     description: String,
     min_participants: u32,
     max_participants: u32,
@@ -44,46 +44,73 @@ pub async fn create(
     let activities_tree = db.open_tree(ACTIVITIES_TREE)?;
     let activities_user_tree = db.open_tree(ACTIVITIES_USER_TREE)?;
     let groups_tree = db.open_tree(crate::group::GROUPS_TREE)?;
-    let result = (&activities_tree, &activities_user_tree, &groups_tree).transaction(
-        |(activities_tree, activities_user_tree, groups_tree)| {
-            let group = groups_tree.get(activity.group_id.to_be_bytes())?.ok_or(
-                sled::transaction::ConflictableTransactionError::Abort(Abort::NotFound),
-            )?;
-            let group: Group = serde_json::from_slice(&group).map_err(|err| {
-                sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(err))
-            })?;
-            if !group.users.contains_key(&user_id) {
-                sled::transaction::abort(Abort::NotFound)?;
-            }
-            let activity_id = activities_tree.generate_id()?;
+    let users_tree = db.open_tree(crate::user::USERS_TREE)?;
+    let result = (
+        &activities_tree,
+        &activities_user_tree,
+        &groups_tree,
+        &users_tree,
+    )
+        .transaction(
+            |(activities_tree, activities_user_tree, groups_tree, users_tree)| {
+                let group = groups_tree.get(activity.group_id.to_be_bytes())?.ok_or(
+                    sled::transaction::ConflictableTransactionError::Abort(Abort::NotFound),
+                )?;
+                let group: Group = serde_json::from_slice(&group).map_err(|err| {
+                    sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(err))
+                })?;
+                if !group.users.contains_key(&user_id) {
+                    sled::transaction::abort(Abort::NotFound)?;
+                }
+                let activity_id = activities_tree.generate_id()?;
 
-            let mut activity = activity.clone();
-            activity.pending = group.users.len() as u32;
-            let mut key = Vec::with_capacity(16);
-            for (user_id, _) in group.users {
-                key.clear();
-                key.extend_from_slice(&user_id.to_be_bytes());
-                key.extend_from_slice(&activity_id.to_be_bytes());
-                // TODO
-                activities_user_tree.insert(
-                    key.as_slice(),
-                    serde_json::to_vec(&Status::Pending).map_err(|err| {
+                let mut key = Vec::with_capacity(16);
+                let mut pending = 0;
+                let mut accepted = 0;
+                for (id, _) in group.users {
+                    let user = users_tree.get(id.to_be_bytes())?.expect("Missing user_id");
+                    let user: User = serde_json::from_slice(&user).map_err(|err| {
+                        sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(
+                            err,
+                        ))
+                    })?;
+                    let intersect = user.blocks.iter().any(|b| activity.block.intersects(b));
+                    let status = if intersect {
+                        Status::Denied
+                    } else if id == user_id {
+                        accepted += 1;
+                        Status::Accepted
+                    } else {
+                        pending += 1;
+                        Status::Pending
+                    };
+                    key.clear();
+                    key.extend_from_slice(&id.to_be_bytes());
+                    key.extend_from_slice(&activity_id.to_be_bytes());
+                    activities_user_tree.insert(
+                        key.as_slice(),
+                        serde_json::to_vec(&status).map_err(|err| {
+                            sled::transaction::ConflictableTransactionError::Abort(
+                                Abort::SerdeError(err),
+                            )
+                        })?,
+                    )?;
+                }
+
+                let mut activity = activity.clone();
+                activity.pending = pending;
+                activity.accepted = accepted;
+                activities_tree.insert(
+                    &activity_id.to_be_bytes(),
+                    serde_json::to_vec(&activity).map_err(|err| {
                         sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(
                             err,
                         ))
                     })?,
                 )?;
-            }
-
-            activities_tree.insert(
-                &activity_id.to_be_bytes(),
-                serde_json::to_vec(&activity).map_err(|err| {
-                    sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(err))
-                })?,
-            )?;
-            Ok(activity_id)
-        },
-    );
+                Ok(activity_id)
+            },
+        );
     match result {
         Ok(activity_id) => Ok(HttpResponse::Ok().json(activity_id)),
         Err(sled::transaction::TransactionError::Storage(err)) => Err(Error::SledError(err)),
