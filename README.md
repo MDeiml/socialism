@@ -4,7 +4,7 @@ Free time is common property.
 
 ## API
 
-All API calls except `register` and `login` have an additional session parameter.
+For all API calls except `POST /user`, `POST /session` and `DELETE /session` `?token=<token>` has to be appended to the URL where `<token>`is the token returned from `POST /session`.
 
 ### Types
 
@@ -20,7 +20,7 @@ All API calls except `register` and `login` have an additional session parameter
     * `POST {username: String, password: String}`: Register a new user. Returns CONFLICT if user already exists.
     * `GET -> User`: Get current logged in user
 * `/session`
-    * `POST {username: String, password: String}`: Log in. Returns UNAUTHORIZED if user and password do not match or user does not exist.
+    * `POST {username: String, password: String} -> String`: Log in. Returns UNAUTHORIZED if user and password do not match or user does not exist. Otherwise returns a session token.
     * `DELETE`: Log out.
 * `/block`
     * `POST Block`: Add new blocked time. Returns CONFLICT if this intersects another blocked time for this user.
