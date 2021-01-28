@@ -1466,19 +1466,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef703b7cb59335eae2eb93ceb664c0eb7ea6bf567079d843e09420219668e072"
 
 [[package]]
-name = "scheduler"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "bcrypt",
- "bincode",
- "env_logger",
- "rand 0.8.2",
- "serde",
- "sled",
-]
-
-[[package]]
 name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1597,6 +1584,19 @@ name = "smallvec"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
+
+[[package]]
+name = "socialism"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "bcrypt",
+ "bincode",
+ "env_logger",
+ "rand 0.8.2",
+ "serde",
+ "sled",
+]
 
 [[package]]
 name = "socket2"
