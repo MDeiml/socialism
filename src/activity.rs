@@ -35,6 +35,18 @@ pub enum Status {
     Denied,
 }
 
+impl Activity {
+    fn status(&self) -> Status {
+        if self.accepted >= self.min_participants {
+            Status::Accepted
+        } else if self.pending < self.min_participants {
+            Status::Denied
+        } else {
+            Status::Pending
+        }
+    }
+}
+
 pub async fn create(
     session: web::Query<Session>,
     db: web::Data<sled::Db>,
@@ -112,7 +124,11 @@ pub async fn create(
                         ))
                     })?,
                 )?;
-                Ok(activity_id)
+                if activity.status() == Status::Denied {
+                    sled::transaction::abort(Abort::NotAllowed)
+                } else {
+                    Ok(activity_id)
+                }
             },
         );
     match result {
@@ -120,7 +136,7 @@ pub async fn create(
         Err(sled::transaction::TransactionError::Storage(err)) => Err(Error::SledError(err)),
         Err(sled::transaction::TransactionError::Abort(abort)) => match abort {
             Abort::NotFound => Ok(HttpResponse::NotFound().finish()),
-            Abort::NotAllowed => Ok(HttpResponse::Forbidden().finish()),
+            Abort::NotAllowed => Ok(HttpResponse::Conflict().finish()),
             Abort::SerdeError(err) => Err(Error::SerdeError(err)),
         },
     }
@@ -201,25 +217,33 @@ pub async fn change_status(
                         Status::Accepted => activity.accepted += 1,
                         _ => (),
                     }
-                    let activity = serde_json::to_vec(&activity).map_err(|err| {
-                        sled::transaction::ConflictableTransactionError::Abort(Abort::SerdeError(
-                            err,
-                        ))
-                    })?;
-                    activities_tree.insert(&params.activity_id.to_be_bytes(), activity)?;
+                    if activity.accepted > activity.max_participants {
+                        sled::transaction::abort(Abort::NotAllowed)?;
+                    }
+                    activities_tree.insert(
+                        &params.activity_id.to_be_bytes(),
+                        serde_json::to_vec(&activity).map_err(|err| {
+                            sled::transaction::ConflictableTransactionError::Abort(
+                                Abort::SerdeError(err),
+                            )
+                        })?,
+                    )?;
+                    Ok(activity.status())
+                } else {
+                    Ok(Status::Pending)
                 }
-                Ok(())
             } else {
                 sled::transaction::abort(Abort::NotFound)
             }
         },
     );
     match result {
-        Ok(()) => Ok(HttpResponse::Ok().finish()),
+        // TODO
+        Ok(_status) => Ok(HttpResponse::Ok().finish()),
         Err(sled::transaction::TransactionError::Storage(err)) => Err(Error::SledError(err)),
         Err(sled::transaction::TransactionError::Abort(abort)) => match abort {
             Abort::NotFound => Ok(HttpResponse::NotFound().finish()),
-            Abort::NotAllowed => Ok(HttpResponse::Forbidden().finish()),
+            Abort::NotAllowed => Ok(HttpResponse::Conflict().finish()),
             Abort::SerdeError(err) => Err(Error::SerdeError(err)),
         },
     }
