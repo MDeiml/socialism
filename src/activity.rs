@@ -40,6 +40,9 @@ pub async fn create(
     db: web::Data<sled::Db>,
     activity: web::Json<Activity>,
 ) -> Result<HttpResponse, Error> {
+    if activity.max_participants != 0 && activity.max_participants < activity.min_participants {
+        return Ok(HttpResponse::BadRequest().finish());
+    }
     let user_id: u64 = session.get(&db)?;
     let activity = activity.into_inner();
     let activities_tree = db.open_tree(ACTIVITIES_TREE)?;

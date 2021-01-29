@@ -1,6 +1,6 @@
 use crate::{block::Block, session::Session, util::Error};
 use actix_web::{web, HttpResponse};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::value::RawValue;
 use sled::Transactional;
 use std::convert::TryInto;
@@ -12,7 +12,20 @@ const USERS_USERNAME_TREE: &[u8] = b"users_username";
 #[derive(Deserialize)]
 pub struct Login {
     username: String,
+    #[serde(deserialize_with = "valid_password")]
     password: String,
+}
+
+fn valid_password<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let password: String = Deserialize::deserialize(deserializer)?;
+    if password.len() >= 4 {
+        Ok(password)
+    } else {
+        Err(serde::de::Error::invalid_length(4, &"4 or more characters"))
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -25,7 +38,6 @@ pub async fn register(
     db: web::Data<sled::Db>,
     login: web::Json<Login>,
 ) -> Result<HttpResponse, Error> {
-    // TODO: Sanitize login
     let users_tree = db.open_tree(USERS_TREE)?;
     let users_username_tree = db.open_tree(USERS_USERNAME_TREE)?;
     let users_password_tree = db.open_tree(USERS_PASSWORD_TREE)?;
