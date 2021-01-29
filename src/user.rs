@@ -1,15 +1,13 @@
-use crate::{block::Block, util::Error};
+use crate::{block::Block, session::Session, util::Error};
 use actix_web::{web, HttpResponse};
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use sled::Transactional;
-use std::{convert::TryInto, fmt::Write};
+use std::convert::TryInto;
 
 const USERS_PASSWORD_TREE: &[u8] = b"users_password";
 pub const USERS_TREE: &[u8] = b"users";
 const USERS_USERNAME_TREE: &[u8] = b"users_username";
-const SESSIONS_TREE: &[u8] = b"sessions";
 
 #[derive(Deserialize)]
 pub struct Login {
@@ -21,40 +19,6 @@ pub struct Login {
 pub struct User {
     pub username: String,
     pub blocks: Vec<Block>,
-}
-
-#[derive(Deserialize)]
-pub struct Session {
-    token: String,
-}
-
-fn new_session(db: &sled::Db, user_id: u64) -> Result<String, Error> {
-    let session_tree = db.open_tree(SESSIONS_TREE)?;
-    let mut bytes = [0u8; 16];
-    let mut rng = rand::thread_rng();
-    rng.fill_bytes(bytes.as_mut());
-    let mut token = String::with_capacity(bytes.len() * 2);
-    for b in bytes.iter() {
-        write!(token, "{:02x}", b).unwrap();
-    }
-    session_tree.insert(token.as_bytes(), &user_id.to_be_bytes())?;
-    Ok(token)
-}
-
-impl Session {
-    pub fn get(&self, db: &sled::Db) -> Result<u64, Error> {
-        let session_tree = db.open_tree(SESSIONS_TREE)?;
-        match session_tree.get(self.token.as_bytes())? {
-            Some(user_id) => Ok(u64::from_be_bytes(user_id.as_ref().try_into().unwrap())),
-            None => Err(Error::AuthenticationError),
-        }
-    }
-
-    fn delete(&self, db: &sled::Db) -> Result<(), Error> {
-        let session_tree = db.open_tree(SESSIONS_TREE)?;
-        session_tree.remove(self.token.as_bytes())?;
-        Ok(())
-    }
 }
 
 pub async fn register(
@@ -110,8 +74,8 @@ pub async fn login(
             let password_hash = String::from_utf8(password_hash).unwrap();
             let id = u64::from_be_bytes(id.as_ref().try_into().unwrap());
             if bcrypt::verify(&password, &password_hash)? {
-                let token = new_session(&db, id)?;
-                Ok(HttpResponse::Ok().json(token))
+                let session = Session::new(&db, id)?;
+                Ok(HttpResponse::Ok().json(session.token))
             } else {
                 Ok(HttpResponse::Unauthorized().finish())
             }

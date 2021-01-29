@@ -3,7 +3,8 @@ use std::{collections::HashMap, convert::TryInto};
 use crate::{
     block::Block,
     group::Group,
-    user::{Session, User},
+    session::Session,
+    user::User,
     util::{Abort, Error},
 };
 use actix_web::{web, HttpResponse};

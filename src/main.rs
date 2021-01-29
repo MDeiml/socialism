@@ -1,6 +1,7 @@
 mod activity;
 mod block;
 mod group;
+mod session;
 mod user;
 mod util;
 

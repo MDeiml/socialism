@@ -1,5 +1,5 @@
 use crate::{
-    user::Session,
+    session::Session,
     util::{Abort, Error},
 };
 use actix_web::{web, HttpResponse};
